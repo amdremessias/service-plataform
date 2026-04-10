@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  nginx:
+    container_name: marketplace-nginx
+    image: nginx:latest
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    depends_on:
+      - web
+      - api
+    networks:
+      - marketplace-network
+
+  certbot:
+    container_name: marketplace-certbot
+    image: certbot/certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $!; done;'"
+    networks:
+      - marketplace-network
+
+  api:
+    container_name: marketplace-api
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://user:password@db:5432/marketplace
+      BASE_URL: http://localhost
+      # Outras variáveis de ambiente serão adicionadas no .env.example
+    volumes:
+      - ./api:/app
+      - /app/node_modules
+    depends_on:
+      - db
+    networks:
+      - marketplace-network
+
+  web:
+    container_name: marketplace-web
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      BASE_URL: http://localhost
+      # Outras variáveis de ambiente serão adicionadas no .env.example
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    depends_on:
+      - api
+    networks:
+      - marketplace-network
+
+  db:
+    container_name: marketplace-db
+    image: postgis/postgis:13-3.1
+    environment:
+      POSTGRES_DB: marketplace
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - marketplace-network
+
+volumes:
+  db-data:
+
+networks:
+  marketplace-network:
+    driver: bridge
